@@ -21,3 +21,10 @@ See [this page] (http://www.codeproject.com/Articles/4610/Three-Ways-to-Inject-Y
    b. It sends the information to a remote server
    
  This proof of concept offers some similar functionnalities to those offered by the zeus trojan : http://www.secureworks.com/research/threats/zeus/
+ 
+ ## DOCS
+ 
+ CreateRemoteThread function : http://msdn.microsoft.com/en-us/library/windows/desktop/ms682437(v=vs.85).aspx
+ WriteProcessMemory function : http://msdn.microsoft.com/en-us/library/windows/desktop/ms681674(v=vs.85).aspx
+ PR_Write function : https://developer.mozilla.org/en/PR_Write
+ Windows 7 UAC code-injection vulnerability (still unpatched ???): http://www.istartedsomething.com/20090613/windows-7-uac-code-injection-vulnerability-video-demonstration-source-code-released/
