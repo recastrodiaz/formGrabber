@@ -50,16 +50,16 @@ BOOL findNamedProcess( char * processName,  PROCESSENTRY32 * outProcessInfo )
 	HANDLE handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0); 
 	outProcessInfo->dwSize = sizeof(PROCESSENTRY32);  
 
-	BOOL result;
+	BOOL notLastProcess;
   	do
     {
-		result = Process32Next( handle, outProcessInfo );
+		notLastProcess = Process32Next( handle, outProcessInfo );
 		// check process name
-		if( result == TRUE && strcmp( outProcessInfo->szExeFile, processName ) == 0 )
+		if( notLastProcess == TRUE && strcmp( outProcessInfo->szExeFile, processName ) == 0 )
 		{
 			return TRUE;
 		}
-	} while (result != ERROR_NO_MORE_FILES);
+	} while (notLastProcess == TRUE);
 
 	return FALSE;
 }
