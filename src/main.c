@@ -131,9 +131,14 @@ Hooked:
 	__asm{
 		mov ecx,[esp + HOOK_ESP_DATA_SIZE]	// param data size
 		mov eax,[esp + HOOK_ESP_DATA_OFFSET]// param data
+
 		cmp dword ptr[eax], HOOK_POST_CMP // POST?
 		jne prexJMP						// it is not POST
 										// it is POST
+		push ebp
+		mov ebp, esp
+		sub esp, 32
+		sub ebp, 16
 		push ecx
 		push eax
 		call getDelta4					// get the delta, &newtInstruction follows this call
@@ -143,9 +148,6 @@ Hooked:
 		lea eax, data
 		add eax, ecx						// eax = &data + (&nextInstruction - &getDelta4) = &data
 		mov eax,[eax]
-//		push ebp
-//		mov ebp, esp
-//		sub esp, 16
 		mov pData, eax					// pData = *eax = *(&nextInstruction +(&data - &getDelta4))
 		pop eax				
 		mov temp,eax					// temp = param data
@@ -171,8 +173,9 @@ Hooked:
 
 	__asm{ 
 		nop
-//		add esp, 16
-//		pop ebp
+		add ebp, 16
+		add esp, 32
+		pop ebp
 		nop
 	}
 
