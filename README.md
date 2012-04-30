@@ -7,6 +7,10 @@ It should not be used for malicious purposes !
 
 Happy learning.
 
+## Blog
+
+More information about this research project here : TODO wordpress link.
+
 ## How to test it
 
 0. Install and open the latest stable Firefox web browser.
