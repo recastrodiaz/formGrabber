@@ -7,7 +7,21 @@ It should not be used for malicious purposes !
 
 Happy learning.
 
-## How it works
+## How to test it
+
+0. Install and open the latest stable Firefox web browser.
+1. Install and run Fiddler 2: http://www.fiddler2.com/fiddler2/
+2. [OPTIONAL] download and run an echo server: http://bansky.net/echotool/. Run: echotool.exe localhost /p tcp /s 80
+2. Create a new Visual Studio 2010 Project from source src/main.c.
+3. Build and run the executable in RELEASE mode.
+4. In Firefox, go to gmail.com. Verify you are in HTTPS mode.
+5. Fill the login form (mail and password).
+6. Click on the Log in button.
+7. In Fiddler, textView mode, you should now see at least two requests. One encrypted to accounts.google.com. The other one unencrypted to localhost/postDemo.php.
+   Inside the the POST data you'll find your email and password Email=myGmailMail@gmail.com&Passwd=guessMe&
+8. [OPTIONAL] the echotool will print the content of the unencrypted POST. 
+
+## How it could work
 
 0. The form grabber is hidden on a corrupted and malicious PDF file.
 1. The user opens the PDF file on a windows machine.
