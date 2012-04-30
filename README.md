@@ -9,7 +9,7 @@ Happy learning.
 
 ## Blog
 
-More information about this research project here : TODO wordpress link.
+More information about this research project here : http://redkiing.wordpress.com/2012/04/30/firefox-formgrabber-i-introduction/.
 
 ## How to test it
 
